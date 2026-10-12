@@ -41,3 +41,30 @@ def delete_task(task_id):
         abort(404)
     del tasks[task_id]
     return "", 204
+
+
+@app.put("/tasks/<int:task_id>")
+def replace_task(task_id):
+    if task_id not in tasks:
+        abort(404)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or "title" not in data or "done" not in data:
+        abort(400)
+    task = {"id": task_id, "title": data["title"], "done": data["done"]}
+    tasks[task_id] = task
+    return jsonify(task)
+
+
+@app.patch("/tasks/<int:task_id>")
+def update_task(task_id):
+    if task_id not in tasks:
+        abort(404)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        abort(400)
+    task = tasks[task_id]
+    if "title" in data:
+        task["title"] = data["title"]
+    if "done" in data:
+        task["done"] = data["done"]
+    return jsonify(task)
