@@ -37,7 +37,20 @@ def handle_http_error(e):
 
 @app.get("/tasks")
 def list_tasks():
-    return jsonify(list(tasks.values()))
+    results = sorted(tasks.values(), key=lambda t: t["id"])
+
+    done = request.args.get("done")
+    if done is not None:
+        if done not in ("true", "false"):
+            abort(400, description="'done' must be 'true' or 'false'.")
+        results = [t for t in results if t["done"] == (done == "true")]
+
+    limit = request.args.get("limit", default=20, type=int)
+    offset = request.args.get("offset", default=0, type=int)
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+
+    return jsonify(results[offset:offset + limit])
 
 
 @app.get("/tasks/<int:task_id>")
