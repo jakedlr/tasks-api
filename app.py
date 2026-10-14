@@ -7,11 +7,11 @@ app = Flask(__name__)
 ALLOWED_FIELDS = {'title', 'done'}
 
 ############ START OF DATABASE LAYER ######################
-DATABASE = "tasks.db"
+app.config["DATABASE"] = "tasks.db"
 
 def get_db():
     if "db" not in g: #Open the connection only if it doesn't exist yet for this request
-        g.db = sqlite3.connect(DATABASE)
+        g.db = sqlite3.connect(app.config["DATABASE"])
         g.db.row_factory = sqlite3.Row
     return g.db
 
