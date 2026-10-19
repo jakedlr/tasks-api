@@ -1,6 +1,8 @@
 import sqlite3
 from flask import Flask, abort, jsonify, request, url_for, g
 from werkzeug.exceptions import HTTPException
+import hmac
+import os
 
 app = Flask(__name__)
 
@@ -8,6 +10,7 @@ ALLOWED_FIELDS = {'title', 'done'}
 
 ############ START OF DATABASE LAYER ######################
 app.config["DATABASE"] = "tasks.db"
+app.config["API_KEY"] = os.environ.get("TASKS_API_KEY", "dev-key")
 
 def get_db():
     if "db" not in g: #Open the connection only if it doesn't exist yet for this request
@@ -75,6 +78,18 @@ def handle_http_error(e):
     return jsonify(error=e.name, message=e.description), e.code
 ############# END VALIDATION AND ERROR HANDLING ######################
 
+############# START AUTH CHECK ###################
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+@app.before_request
+def require_api_key():
+    if request.method not in WRITE_METHODS:
+        return
+    provided = request.headers.get("X-API-Key", "")
+    expected = app.config["API_KEY"]
+    if not hmac.compare_digest(provided.encode(), expected.encode()):
+        abort(401, description="Missing or invalid API key.")
+############# END AUTH CHECK #####################
 
 ############ START OF HTTP METHODS ########################
 @app.get("/tasks")

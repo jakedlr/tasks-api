@@ -5,10 +5,15 @@ from app import app, init_db
 
 @pytest.fixture
 def client(tmp_path):
-    app.config.update(TESTING=True, DATABASE=str(tmp_path / "test.db"))
+    app.config.update(
+        TESTING=True,
+        DATABASE=str(tmp_path / "test.db"),
+        API_KEY="test-key",
+    )
     with app.app_context():
         init_db()
     with app.test_client() as client:
+        client.environ_base["HTTP_X_API_KEY"] = "test-key"
         yield client
 
 
@@ -69,3 +74,22 @@ def test_filter_and_pagination(client):
 
     page = client.get("/tasks?limit=2&offset=2").get_json()
     assert [t["id"] for t in page] == [3, 4]
+
+# AUTH TESTS
+
+def test_writes_require_api_key(client):
+    anon = app.test_client()
+    resp = anon.post("/tasks", json={"title": "x"})
+    assert resp.status_code == 401
+    assert resp.get_json()["error"] == "Unauthorized"
+
+    resp = anon.post("/tasks", json={"title": "x"}, headers={"X-API-Key": "wrong"})
+    assert resp.status_code == 401
+    assert anon.get("/tasks").get_json() == []
+
+
+def test_reads_do_not_require_api_key(client):
+    client.post("/tasks", json={"title": "Public"})
+    anon = app.test_client()
+    assert anon.get("/tasks").status_code == 200
+    assert anon.get("/tasks/1").status_code == 200
