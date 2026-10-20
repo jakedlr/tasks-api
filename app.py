@@ -1,10 +1,11 @@
 import sqlite3
-from flask import Flask, abort, jsonify, request, url_for, g
+from flask import Flask, abort, jsonify, request, url_for, g, Blueprint
 from werkzeug.exceptions import HTTPException
 import hmac
 import os
 
 app = Flask(__name__)
+api = Blueprint("api", __name__, url_prefix="/v1")
 
 ALLOWED_FIELDS = {'title', 'done'}
 
@@ -92,7 +93,7 @@ def require_api_key():
 ############# END AUTH CHECK #####################
 
 ############ START OF HTTP METHODS ########################
-@app.get("/tasks")
+@api.get("/tasks")
 def list_tasks():
     query = "SELECT * FROM tasks"
     params = []
@@ -116,12 +117,12 @@ def list_tasks():
     return jsonify([row_to_task(r) for r in rows])
 
 
-@app.get("/tasks/<int:task_id>")
+@api.get("/tasks/<int:task_id>")
 def get_task(task_id):
     return jsonify(fetch_task(task_id))
 
 
-@app.post("/tasks")
+@api.post("/tasks")
 def create_task():
     data = validate_task(request.get_json(silent=True), required={"title"})
     db = get_db()
@@ -131,11 +132,11 @@ def create_task():
     )
     db.commit()
     task = fetch_task(cur.lastrowid)
-    location = url_for("get_task", task_id=task["id"])
+    location = url_for("api.get_task", task_id=task["id"])
     return jsonify(task), 201, {"Location": location}
 
 
-@app.delete("/tasks/<int:task_id>")
+@api.delete("/tasks/<int:task_id>")
 def delete_task(task_id):
     fetch_task(task_id)
     db = get_db()
@@ -144,7 +145,7 @@ def delete_task(task_id):
     return "", 204
 
 
-@app.put("/tasks/<int:task_id>")
+@api.put("/tasks/<int:task_id>")
 def replace_task(task_id):
     fetch_task(task_id)
     data = validate_task(request.get_json(silent=True), required={"title", "done"})
@@ -157,7 +158,7 @@ def replace_task(task_id):
     return jsonify(fetch_task(task_id))
 
 
-@app.patch("/tasks/<int:task_id>")
+@api.patch("/tasks/<int:task_id>")
 def update_task(task_id):
     current = fetch_task(task_id)
     data = validate_task(request.get_json(silent=True), required=set())
@@ -170,3 +171,6 @@ def update_task(task_id):
     db.commit()
     return jsonify(fetch_task(task_id))
 ############ END OF HTTP METHODS #################
+
+#Register the Blueprint
+app.register_blueprint(api)
