@@ -99,3 +99,31 @@ def test_unversioned_path_is_404(client):
     resp = client.get("/tasks")
     assert resp.status_code == 404
     assert resp.get_json()["error"] == "Not Found"
+
+
+#Part 14 tests
+def test_create_and_get_project(client):
+    resp = client.post("/v1/projects", json={"name": "Home"})
+    assert resp.status_code == 201
+    assert resp.get_json() == {"id": 1, "name": "Home"}
+    assert resp.headers["Location"].endswith("/v1/projects/1")
+    assert client.get("/v1/projects/1").get_json()["name"] == "Home"
+
+
+def test_duplicate_project_name_is_409(client):
+    client.post("/v1/projects", json={"name": "Home"})
+    resp = client.post("/v1/projects", json={"name": "  Home  "})
+    assert resp.status_code == 409
+    assert resp.get_json()["error"] == "Conflict"
+
+
+def test_project_validation_and_404(client):
+    assert client.post("/v1/projects", json={}).status_code == 422
+    assert client.post("/v1/projects", json={"name": "x", "color": "red"}).status_code == 422
+    assert client.get("/v1/projects/99").status_code == 404
+
+
+def test_delete_project(client):
+    client.post("/v1/projects", json={"name": "Temp"})
+    assert client.delete("/v1/projects/1").status_code == 204
+    assert client.get("/v1/projects/1").status_code == 404

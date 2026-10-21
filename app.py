@@ -28,11 +28,19 @@ def close_db(exc):
 
 def init_db():
     db = get_db()
+    #TASKS TABLE
     db.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id    INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT    NOT NULL,
             done  INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    #PROJECTS TABLE
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT    NOT NULL UNIQUE
         )
     """)
     db.commit()
@@ -51,6 +59,20 @@ def fetch_task(task_id):
     if row is None:
         abort(404, description=f"Task {task_id} not found.")
     return row_to_task(row)
+
+
+#Project Helpers
+def row_to_project(row):
+    return {"id": row["id"], "name": row["name"]}
+
+
+def fetch_project(project_id):
+    row = get_db().execute(
+        "SELECT * FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    if row is None:
+        abort(404, description=f"Project {project_id} not found.")
+    return row_to_project(row)
 ############ END OF DATABASE LAYER #################
 
 
@@ -77,6 +99,20 @@ def validate_task(data, required):
 @app.errorhandler(HTTPException)
 def handle_http_error(e):
     return jsonify(error=e.name, message=e.description), e.code
+
+#Projects validation
+def validate_project(data):
+    if not isinstance(data, dict):
+        abort(400, description="Request body must be a JSON object.")
+    unknown = set(data) - {"name"}
+    if unknown:
+        abort(422, description=f"Unknown fields: {sorted(unknown)}")
+    if "name" not in data:
+        abort(422, description="Missing fields: ['name']")
+    if not isinstance(data["name"], str) or not data["name"].strip():
+        abort(422, description="'name' must be a non-empty string.")
+    data["name"] = data["name"].strip()
+    return data
 ############# END VALIDATION AND ERROR HANDLING ######################
 
 ############# START AUTH CHECK ###################
@@ -170,6 +206,42 @@ def update_task(task_id):
     )
     db.commit()
     return jsonify(fetch_task(task_id))
+
+
+#Project endpoints (part 14)
+@api.get("/projects")
+def list_projects():
+    rows = get_db().execute("SELECT * FROM projects ORDER BY id").fetchall()
+    return jsonify([row_to_project(r) for r in rows])
+
+
+@api.get("/projects/<int:project_id>")
+def get_project(project_id):
+    return jsonify(fetch_project(project_id))
+
+
+@api.post("/projects")
+def create_project():
+    data = validate_project(request.get_json(silent=True))
+    db = get_db()
+    try:
+        cur = db.execute("INSERT INTO projects (name) VALUES (?)", (data["name"],))
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        abort(409, description=f"A project named '{data['name']}' already exists.")
+    project = fetch_project(cur.lastrowid)
+    location = url_for("api.get_project", project_id=project["id"])
+    return jsonify(project), 201, {"Location": location}
+
+
+@api.delete("/projects/<int:project_id>")
+def delete_project(project_id):
+    fetch_project(project_id)
+    db = get_db()
+    db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    db.commit()
+    return "", 204
 ############ END OF HTTP METHODS #################
 
 #Register the Blueprint
