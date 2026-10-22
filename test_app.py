@@ -20,7 +20,7 @@ def client(tmp_path):
 def test_create_then_get(client):
     resp = client.post("/v1/tasks", json={"title": "Write tests"})
     assert resp.status_code == 201
-    assert resp.get_json() == {"id": 1, "title": "Write tests", "done": False}
+    assert resp.get_json() == {"id": 1, "title": "Write tests", "done": False, "project_id": None}
     assert resp.headers["Location"].endswith("/v1/tasks/1")
 
     resp = client.get("/v1/tasks/1")
@@ -47,7 +47,7 @@ def test_put_requires_all_fields_but_patch_does_not(client):
 
     resp = client.patch("/v1/tasks/1", json={"done": True})
     assert resp.status_code == 200
-    assert resp.get_json() == {"id": 1, "title": "Original", "done": True}
+    assert resp.get_json() == {"id": 1, "title": "Original", "done": True, "project_id": None}
 
 
 def test_delete_then_404(client):
@@ -127,3 +127,37 @@ def test_delete_project(client):
     client.post("/v1/projects", json={"name": "Temp"})
     assert client.delete("/v1/projects/1").status_code == 204
     assert client.get("/v1/projects/1").status_code == 404
+
+
+#Part 15 tests
+def test_nested_task_creation_and_listing(client):
+    client.post("/v1/projects", json={"name": "Home"})
+    resp = client.post("/v1/projects/1/tasks", json={"title": "Dishes"})
+    assert resp.status_code == 201
+    assert resp.get_json()["project_id"] == 1
+    assert resp.headers["Location"].endswith("/v1/tasks/1")
+
+    client.post("/v1/tasks", json={"title": "Unassigned"})
+    tasks = client.get("/v1/projects/1/tasks").get_json()
+    assert [t["title"] for t in tasks] == ["Dishes"]
+
+
+def test_empty_project_returns_empty_list(client):
+    client.post("/v1/projects", json={"name": "Empty"})
+    resp = client.get("/v1/projects/1/tasks")
+    assert resp.status_code == 200
+    assert resp.get_json() == []
+
+
+def test_nested_routes_404_for_missing_project(client):
+    assert client.get("/v1/projects/99/tasks").status_code == 404
+    assert client.post("/v1/projects/99/tasks", json={"title": "x"}).status_code == 404
+
+
+def test_deleting_project_cascades_to_its_tasks(client):
+    client.post("/v1/projects", json={"name": "Home"})
+    client.post("/v1/projects/1/tasks", json={"title": "Dishes"})
+    client.post("/v1/tasks", json={"title": "Unassigned"})
+    client.delete("/v1/projects/1")
+    assert client.get("/v1/tasks/1").status_code == 404
+    assert client.get("/v1/tasks/2").status_code == 200

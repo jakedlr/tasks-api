@@ -17,6 +17,7 @@ def get_db():
     if "db" not in g: #Open the connection only if it doesn't exist yet for this request
         g.db = sqlite3.connect(app.config["DATABASE"])
         g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON") #Necessary to connect tasks->projects
     return g.db
 
 @app.teardown_appcontext
@@ -43,13 +44,28 @@ def init_db():
             name TEXT    NOT NULL UNIQUE
         )
     """)
+    migrate_db(db)
     db.commit()
 
+
+def migrate_db(db):
+    columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)")}
+    if "project_id" not in columns:
+        db.execute(
+            "ALTER TABLE tasks ADD COLUMN project_id INTEGER "
+            "REFERENCES projects(id) ON DELETE CASCADE"
+        )
 with app.app_context():
     init_db()
 
+
 def row_to_task(row):
-    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+    return {
+        "id": row["id"], 
+        "title": row["title"], 
+        "done": bool(row["done"]),
+        "project_id": row["project_id"], #Trailing comma intentional here; python ignores it
+    }
 
 
 def fetch_task(task_id):
@@ -242,6 +258,31 @@ def delete_project(project_id):
     db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
     db.commit()
     return "", 204
+
+
+#Part 15 (linking projects to tasks)
+@api.get("/projects/<int:project_id>/tasks")
+def list_project_tasks(project_id):
+    fetch_project(project_id)
+    rows = get_db().execute(
+        "SELECT * FROM tasks WHERE project_id = ? ORDER BY id", (project_id,)
+    ).fetchall()
+    return jsonify([row_to_task(r) for r in rows])
+
+
+@api.post("/projects/<int:project_id>/tasks")
+def create_project_task(project_id):
+    fetch_project(project_id)
+    data = validate_task(request.get_json(silent=True), required={"title"})
+    db = get_db()
+    cur = db.execute(
+        "INSERT INTO tasks (title, done, project_id) VALUES (?, ?, ?)",
+        (data["title"], int(data.get("done", False)), project_id),
+    )
+    db.commit()
+    task = fetch_task(cur.lastrowid)
+    location = url_for("api.get_task", task_id=task["id"])
+    return jsonify(task), 201, {"Location": location}
 ############ END OF HTTP METHODS #################
 
 #Register the Blueprint
